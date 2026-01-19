@@ -74,20 +74,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">📊 Historical Volatility Screener</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Market Maker Volatility Engine - CoinGecko Spot & Binance Options | HV at 08:00 UTC</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Market Maker Volatility Engine - Powered by CoinGecko API | HV at 08:00 UTC</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # DATA LOADING & UTILITIES
 # =============================================================================
 
 @st.cache_data(show_spinner=False)
-def load_asset_list(csv_path: str = None, uploaded_file=None) -> pd.DataFrame:
-    """Load the curated asset list from CSV file or uploaded file."""
+def load_asset_list(csv_path: str = None) -> pd.DataFrame:
+    """Load the curated asset list from CSV file."""
     try:
-        if uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            return df.fillna("")
-        
         # Try multiple possible locations
         possible_paths = [
             csv_path,
@@ -120,12 +116,19 @@ def build_token_options(df: pd.DataFrame, filter_coingecko: bool = False,
         
         common = str(row.get("Common Name", "")).strip()
         cg_id = str(row.get("CG API ID", "")).strip()
-        symbol = f"{coin}USDT"
+        
+        # Skip if no CoinGecko ID (required for API calls)
+        if not cg_id:
+            continue
         
         # Apply filters
         if filter_coingecko and not cg_id:
             continue
-        if filter_binance_options and not cg_id:  # For now, assume options available if CG listed
+        
+        # Check if it's an options-eligible asset
+        is_options_eligible = coin in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'LINK', 'DOT', 'MATIC']
+        
+        if filter_binance_options and not is_options_eligible:
             continue
         
         seen.add(coin)
@@ -134,13 +137,14 @@ def build_token_options(df: pd.DataFrame, filter_coingecko: bool = False,
         indicators = []
         if cg_id:
             indicators.append("CG")  # CoinGecko
-        # Assume Binance options available for major assets
-        if coin in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'LINK', 'DOT', 'MATIC']:
+        if is_options_eligible:
             indicators.append("OPT")  # Options
         
         indicator_str = f" [{'/'.join(indicators)}]" if indicators else ""
         display = f"{coin}{f' - {common}' if common else ''}{indicator_str}"
-        options[display] = symbol
+        
+        # Store CoinGecko ID for API calls
+        options[display] = (coin, cg_id)
     
     return options
 
@@ -149,87 +153,95 @@ def build_token_options(df: pd.DataFrame, filter_coingecko: bool = False,
 # =============================================================================
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_crypto_data(
-    symbol: str,
-    market_type: str,
-    interval: str = "1d",
-    start_time: int = None,
-    end_time: int = None,
-    limit: int = 1000
+def get_crypto_data_coingecko(
+    coin_id: str,
+    start_date: datetime,
+    end_date: datetime
 ) -> pd.DataFrame:
     """
-    Fetch historical OHLCV data from Binance with 08:00 UTC timestamps.
+    Fetch historical OHLCV data from CoinGecko with 08:00 UTC timestamps.
     
     Args:
-        symbol: Trading pair (e.g., 'BTCUSDT')
-        market_type: 'spot' or 'options'
-        interval: Kline interval (default '1d')
-        start_time: Start timestamp in milliseconds (08:00 UTC)
-        end_time: End timestamp in milliseconds (08:00 UTC)
-        limit: Maximum number of data points
+        coin_id: CoinGecko API ID (e.g., 'bitcoin')
+        start_date: Start date
+        end_date: End date
     
     Returns:
         DataFrame with OHLCV data indexed by timestamp (08:00 UTC)
     """
-    # Select API endpoint - using Spot for both since we're getting price data
-    base_url = "https://api.binance.com/api/v3/klines"
-    
-    params = {
-        'symbol': symbol,
-        'interval': interval,
-        'limit': limit,
-    }
-    
-    if start_time is not None:
-        params['startTime'] = int(start_time)
-    if end_time is not None:
-        params['endTime'] = int(end_time)
-    
     try:
-        response = requests.get(base_url, params=params, timeout=10)
+        # CoinGecko uses Unix timestamps in seconds
+        from_timestamp = int(start_date.timestamp())
+        to_timestamp = int(end_date.timestamp())
+        
+        # CoinGecko market_chart/range endpoint
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart/range"
+        params = {
+            'vs_currency': 'usd',
+            'from': from_timestamp,
+            'to': to_timestamp
+        }
+        
+        response = requests.get(url, params=params, timeout=15)
         
         if response.status_code != 200:
-            st.warning(f"Binance API returned status {response.status_code} for {symbol}")
+            st.warning(f"CoinGecko API returned status {response.status_code} for {coin_id}")
             return pd.DataFrame()
         
         data = response.json()
-        if not data or not isinstance(data, list):
+        
+        if 'prices' not in data or not data['prices']:
             return pd.DataFrame()
         
-        # Parse response (identical structure for Spot and Futures)
-        df = pd.DataFrame(
-            data,
-            columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                'close_time', 'quote_asset_volume', 'number_of_trades',
-                'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-            ],
-        )
-        
-        # Convert timestamps to UTC datetime
+        # Convert to DataFrame
+        df = pd.DataFrame(data['prices'], columns=['timestamp', 'close'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
         
-        # Binance daily candles close at 00:00 UTC and open at 00:00 UTC
-        # We need to adjust to 08:00 UTC for HV calculations
-        # Add 8 hours to align with 08:00 UTC snapshot time
-        df['timestamp'] = df['timestamp'] + pd.Timedelta(hours=8)
+        # Get volumes if available
+        if 'total_volumes' in data and data['total_volumes']:
+            volumes = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'volume'])
+            volumes['timestamp'] = pd.to_datetime(volumes['timestamp'], unit='ms', utc=True)
+            df = df.merge(volumes, on='timestamp', how='left')
+        else:
+            df['volume'] = 0
         
-        df = df.set_index('timestamp').sort_index()
+        # Resample to daily and align to 08:00 UTC
+        df = df.set_index('timestamp')
+        df = df.resample('1D').agg({
+            'close': 'last',
+            'volume': 'sum'
+        })
         
-        return df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+        # Shift to 08:00 UTC
+        df.index = df.index + pd.Timedelta(hours=8)
+        
+        # Add OHLC (CoinGecko only provides close prices in market_chart)
+        df['open'] = df['close']
+        df['high'] = df['close']
+        df['low'] = df['close']
+        
+        df = df[['open', 'high', 'low', 'close', 'volume']].dropna()
+        
+        return df
     
     except Exception as e:
-        st.warning(f"Error fetching data for {symbol}: {str(e)}")
+        st.warning(f"Error fetching data from CoinGecko for {coin_id}: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_current_price(symbol: str, market_type: str) -> float:
-    """Get the latest price from Binance Spot."""
+def get_current_price_coingecko(coin_id: str) -> float:
+    """Get the latest price from CoinGecko."""
     try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-        response = requests.get(url, timeout=5)
+        url = f"https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            'ids': coin_id,
+            'vs_currencies': 'usd'
+        }
+        response = requests.get(url, params=params, timeout=5)
         if response.status_code == 200:
-            return float(response.json()['price'])
+            data = response.json()
+            if coin_id in data and 'usd' in data[coin_id]:
+                return float(data[coin_id]['usd'])
         return None
     except Exception:
         return None
@@ -338,23 +350,14 @@ def black_scholes(S: float, K: float, T: float, r: float, sigma: float, option_t
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    # Asset List Upload
-    st.subheader("📂 Asset List")
-    uploaded_file = st.file_uploader(
-        "Upload asset_list.csv (optional)",
-        type=['csv'],
-        help="Upload your asset_list.csv file if not found automatically"
-    )
-    
-    # Load asset list
-    asset_df = load_asset_list(csv_path="asset_list.csv", uploaded_file=uploaded_file)
+    # Load asset list (no upload option)
+    asset_df = load_asset_list(csv_path="asset_list.csv")
     
     if asset_df.empty:
-        st.error("⚠️ Asset list not loaded. Please upload asset_list.csv file above.")
-        st.info("The file should have columns: Coin symbol, Common Name, CG API ID")
+        st.error("⚠️ Asset list not found. Please ensure asset_list.csv is in the same directory as the script.")
         st.stop()
-    else:
-        st.success(f"✓ Loaded {len(asset_df)} assets")
+    
+    st.success(f"✓ Loaded {len(asset_df)} assets")
     
     st.divider()
     
@@ -362,19 +365,19 @@ with st.sidebar:
     st.subheader("📊 Data Source")
     
     data_source = st.radio(
-        "Select Price Data Source",
+        "Select Asset Filter",
         options=["CoinGecko", "Binance Options"],
         index=0,
-        help="Choose where to get historical price data for HV calculations"
+        help="Choose which assets to display based on market availability"
     )
     
     # Explain the data source
     if data_source == "CoinGecko":
-        st.info("📈 Using CoinGecko Spot prices via Binance API")
+        st.info("📈 All CoinGecko-listed assets (comprehensive coverage)")
         filter_cg = True
         filter_options = False
     else:
-        st.info("⚡ Using Binance for Options-tradeable assets")
+        st.info("⚡ Options-tradeable assets only (BTC, ETH, SOL, etc.)")
         filter_cg = False
         filter_options = True
     
@@ -523,37 +526,35 @@ if not vol_windows:
     st.error("Please specify at least one valid HV window")
     st.stop()
 
-# Convert dates to timestamps at 08:00 UTC
+# Convert dates to datetime for CoinGecko
 utc = pytz.UTC
 start_dt = datetime.combine(start_date, datetime.min.time()).replace(hour=8, minute=0, second=0, microsecond=0)
 start_dt = utc.localize(start_dt)
 end_dt = datetime.combine(end_date, datetime.min.time()).replace(hour=8, minute=0, second=0, microsecond=0)
 end_dt = utc.localize(end_dt)
 
-start_ms = int(start_dt.timestamp() * 1000)
-end_ms = int(end_dt.timestamp() * 1000)
-
 # Process each selected asset
 for idx, display_name in enumerate(selected_display):
-    symbol = token_options.get(display_name)
-    if not symbol:
+    asset_data = token_options.get(display_name)
+    if not asset_data:
         continue
+    
+    coin_symbol, coin_id = asset_data
     
     # Section divider
     st.markdown("---")
     st.markdown(f"## {display_name}")
     
-    # Fetch data
-    with st.spinner(f"Fetching {symbol} data..."):
-        raw_df = get_crypto_data(
-            symbol=symbol,
-            market_type='spot',  # Always use spot for price data
-            start_time=start_ms,
-            end_time=end_ms
+    # Fetch data from CoinGecko
+    with st.spinner(f"Fetching {coin_symbol} data from CoinGecko..."):
+        raw_df = get_crypto_data_coingecko(
+            coin_id=coin_id,
+            start_date=start_dt,
+            end_date=end_dt
         )
     
     if raw_df.empty:
-        st.warning(f"⚠️ No data available for {symbol}. The asset may not be listed on Binance or the date range may be invalid.")
+        st.warning(f"⚠️ No data available for {coin_symbol} from CoinGecko. The asset may not have sufficient price history.")
         continue
     
     # Calculate volatility metrics
@@ -565,7 +566,7 @@ for idx, display_name in enumerate(selected_display):
     
     # Get latest metrics
     latest = processed_df.iloc[-1]
-    current_price = get_current_price(symbol, 'spot') or latest['close']
+    current_price = get_current_price_coingecko(coin_id) or latest['close']
     
     # =============================================================================
     # METRICS ROW
@@ -780,15 +781,15 @@ for idx, display_name in enumerate(selected_display):
         export_df.to_csv(csv_buffer)
         csv_data = csv_buffer.getvalue()
         
-        filename = f"{symbol}_Volatility_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+        filename = f"{coin_symbol}_Volatility_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
         
         st.download_button(
-            label=f"📥 Download {symbol} Volatility Data",
+            label=f"📥 Download {coin_symbol} Volatility Data",
             data=csv_data,
             file_name=filename,
             mime='text/csv',
-            key=f"download_{symbol}_{idx}",
-            help=f"Export complete volatility dataset for {symbol} from {start_date} to {end_date}"
+            key=f"download_{coin_symbol}_{idx}",
+            help=f"Export complete volatility dataset for {coin_symbol} from {start_date} to {end_date}"
         )
     
     # =============================================================================
@@ -853,4 +854,4 @@ for idx, display_name in enumerate(selected_display):
 # =============================================================================
 
 st.markdown("---")
-st.caption("Market Maker HV Screener | Data: Binance Spot API | HV calculated at 08:00 UTC using 365-day annualization")
+st.caption("Market Maker HV Screener | Data: CoinGecko API | HV calculated at 08:00 UTC using 365-day annualization")

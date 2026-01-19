@@ -12,9 +12,9 @@ Professional-grade volatility analysis tool designed specifically for market mak
 - **Theoretical Pricer**: Black-Scholes option pricing using realized vol as input
 
 ### Data Sources
-- **CoinGecko Spot**: Complete spot market coverage via Binance API
-- **Binance Options**: Focus on options-tradeable assets (BTC, ETH, BNB, SOL, etc.)
+- **CoinGecko API**: Complete market coverage with global price data
 - **08:00 UTC Snapshots**: Standardized daily volatility calculations
+- **No geo-restrictions**: Works worldwide (unlike Binance API)
 
 ### Technical Capabilities
 - **Dual Source Support**: Toggle between CoinGecko Spot and Binance Options assets
@@ -45,13 +45,9 @@ pip install streamlit pandas numpy requests plotly scipy pytz
 
 ### 1. Setup
 
-**Option A: Place files in same directory**
+Place both files in the same directory:
 - `hv_screener_enhanced.py`
 - `asset_list.csv`
-
-**Option B: Upload via web interface**
-- Run the app
-- Use the file upload button in the sidebar to upload `asset_list.csv`
 
 ### 2. Run the Application
 ```bash
@@ -64,16 +60,15 @@ The app will open in your default browser at `http://localhost:8501`
 
 **In the Sidebar:**
 
-1. **Asset List Upload** (if not auto-detected): Upload your `asset_list.csv`
-2. **Data Source**: Choose between:
-   - **CoinGecko**: All assets with CoinGecko listings (comprehensive spot coverage)
-   - **Binance Options**: Focus on options-tradeable assets (BTC, ETH, BNB, SOL, etc.)
-3. **Asset Selection**: Select up to 5 assets from the filtered list
+1. **Data Source**: Choose between:
+   - **CoinGecko**: All assets with CoinGecko listings (comprehensive coverage)
+   - **Binance Options**: Options-tradeable assets only (BTC, ETH, BNB, SOL, etc.)
+2. **Asset Selection**: Select up to 5 assets from the filtered list
    - Legend shows availability: `[CG]` = CoinGecko, `[OPT]` = Options Available
-4. **Date Range**: Define your analysis period (default: last 180 days)
-5. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
-6. **Term Structure**: Select short and long tenors for spread analysis
-7. **Options Pricer**: Set expiry, strike range, and risk-free rate
+3. **Date Range**: Define your analysis period (default: last 180 days)
+4. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
+5. **Term Structure**: Select short and long tenors for spread analysis
+6. **Options Pricer**: Set expiry, strike range, and risk-free rate
 
 ## 📊 Understanding the Metrics
 
@@ -217,11 +212,12 @@ For different trading strategies:
 ## ⚠️ Important Notes
 
 ### Data Source
-- **Binance Spot API**: All price and volume data
-- **CoinGecko Integration**: Asset metadata and verification
-- **Endpoint**: `api.binance.com/api/v3/klines`
+- **CoinGecko API**: Global price data, no geo-restrictions
+- **Endpoint**: `api.coingecko.com/api/v3/coins/{id}/market_chart/range`
+- **Currency**: USD
+- **Coverage**: 10,000+ cryptocurrencies
 
-All assets use Binance Spot market data regardless of data source selection. The data source filter simply determines which assets are shown based on CoinGecko listing or options availability.
+All assets use CoinGecko market data. The data source filter (CoinGecko vs Binance Options) simply determines which subset of assets to display.
 
 ### Limitations
 - Requires active internet connection
@@ -238,29 +234,24 @@ If you hit rate limits, wait a few minutes before refreshing.
 
 ## 🐛 Troubleshooting
 
-### "Asset list not loaded"
-**Solution 1**: Use the file uploader
-- Click "Browse files" button in the sidebar
-- Upload your `asset_list.csv` file
-- App will automatically load the assets
+### "Asset list not found"
+**Solution**: Ensure `asset_list.csv` is in the same directory as `hv_screener_enhanced.py`
 
-**Solution 2**: Check file location
-- Ensure `asset_list.csv` is in the same directory as the Python script
-- Or in the current working directory when you run streamlit
+Verify file structure:
+```
+your-project/
+├── hv_screener_enhanced.py
+└── asset_list.csv
+```
 
-**Solution 3**: Verify file format
-- CSV must have columns: `Coin symbol`, `Common Name`, `CG API ID`
-- Use comma separators
-- No special characters in the file path
-
-### "No assets match your filters"
+### "No assets match your selection"
 - Uncheck some filter options (Spot/Futures/CoinGecko)
 - Some assets may only be on Spot or only on Futures
 - Clear all filters to see complete asset list
 
 ### "No data available for {SYMBOL}"
-- Verify the asset is listed on Binance
-- Check if it's available in the selected market (Spot vs Perps)
+- Verify the asset has a CoinGecko ID in your asset_list.csv
+- CoinGecko API might be rate-limited (wait 1 minute)
 - Try a shorter date range
 - Some newer assets don't have long price history
 
