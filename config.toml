@@ -1,0 +1,64 @@
+# Streamlit Configuration for HV Screener
+
+[theme]
+# Primary color for interactive elements
+primaryColor = "#00d4ff"
+
+# Background color for the main content area
+backgroundColor = "#0e1117"
+
+# Background color for sidebar and other secondary areas
+secondaryBackgroundColor = "#1e1e1e"
+
+# Color for text
+textColor = "#ffffff"
+
+# Font family
+font = "sans serif"
+
+[server]
+# Port number
+port = 8501
+
+# Maximum upload size (MB)
+maxUploadSize = 10
+
+# Enable CORS for embedded use
+enableCORS = false
+
+# Enable XSRF protection
+enableXsrfProtection = true
+
+# Server address
+headless = true
+
+[browser]
+# Don't gather usage stats
+gatherUsageStats = false
+
+# Server address to use
+serverAddress = "localhost"
+
+# Server port to use
+serverPort = 8501
+
+[runner]
+# Allow reruns when cached data is stale
+fastReruns = true
+
+# Number of seconds to wait before timing out
+scriptHealthCheckDelay = 10
+
+[client]
+# Whether to show error details in the browser
+showErrorDetails = true
+
+# Toolbar mode (developer, viewer, minimal)
+toolbarMode = "minimal"
+
+[logger]
+# Level of logging: 'error', 'warning', 'info', 'debug'
+level = "info"
+
+# Message format
+messageFormat = "%(asctime)s %(message)s"

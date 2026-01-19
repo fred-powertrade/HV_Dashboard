@@ -81,32 +81,98 @@ st.markdown('<div class="subtitle">Market Maker Volatility Engine - HV calculate
 # =============================================================================
 
 @st.cache_data(show_spinner=False)
-def load_asset_list(csv_path: str) -> pd.DataFrame:
-    """Load the curated asset list from CSV."""
+def load_asset_list(csv_path: str = None, uploaded_file=None) -> pd.DataFrame:
+    """Load the curated asset list from CSV file or uploaded file."""
     try:
-        if not os.path.exists(csv_path):
-            st.error(f"Asset list not found at: {csv_path}")
-            return pd.DataFrame()
-        df = pd.read_csv(csv_path)
-        return df.fillna("")
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file)
+            return df.fillna("")
+        
+        # Try multiple possible locations
+        possible_paths = [
+            csv_path,
+            "asset_list.csv",
+            "./asset_list.csv",
+            os.path.join(os.getcwd(), "asset_list.csv"),
+            os.path.join(os.path.dirname(__file__), "asset_list.csv")
+        ]
+        
+        for path in possible_paths:
+            if path and os.path.exists(path):
+                df = pd.read_csv(path)
+                return df.fillna("")
+        
+        return pd.DataFrame()
     except Exception as exc:
         st.error(f"Failed to load asset list: {exc}")
         return pd.DataFrame()
 
-def build_token_options(df: pd.DataFrame) -> dict:
-    """Build token selection options from asset list."""
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_binance_symbols(market_type: str) -> set:
+    """Get list of all available symbols on Binance Spot or Futures."""
+    try:
+        if market_type == 'spot':
+            url = "https://api.binance.com/api/v3/exchangeInfo"
+        else:
+            url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+        
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            symbols = {s['symbol'] for s in data.get('symbols', []) if s['symbol'].endswith('USDT')}
+            return symbols
+        return set()
+    except Exception:
+        return set()
+
+def build_token_options(df: pd.DataFrame, filter_binance_spot: bool = False, 
+                       filter_binance_futures: bool = False, 
+                       filter_coingecko: bool = False) -> dict:
+    """Build token selection options from asset list with filtering."""
     options = {}
     seen = set()
+    
+    # Get available Binance symbols if filtering
+    binance_spot_symbols = set()
+    binance_futures_symbols = set()
+    
+    if filter_binance_spot or filter_binance_futures:
+        if filter_binance_spot:
+            binance_spot_symbols = get_binance_symbols('spot')
+        if filter_binance_futures:
+            binance_futures_symbols = get_binance_symbols('perps')
     
     for _, row in df.iterrows():
         coin = str(row.get("Coin symbol", "")).strip().upper()
         if not coin or coin in seen:
             continue
-        seen.add(coin)
         
         common = str(row.get("Common Name", "")).strip()
-        display = f"{coin} - {common}" if common else coin
-        options[display] = f"{coin}USDT"
+        cg_id = str(row.get("CG API ID", "")).strip()
+        symbol = f"{coin}USDT"
+        
+        # Apply filters
+        if filter_binance_spot and symbol not in binance_spot_symbols:
+            continue
+        if filter_binance_futures and symbol not in binance_futures_symbols:
+            continue
+        if filter_coingecko and not cg_id:
+            continue
+        
+        seen.add(coin)
+        
+        # Build display name with availability indicators
+        indicators = []
+        if symbol in binance_spot_symbols or not filter_binance_spot:
+            indicators.append("S")  # Spot
+        if symbol in binance_futures_symbols or not filter_binance_futures:
+            indicators.append("F")  # Futures
+        if cg_id:
+            indicators.append("CG")  # CoinGecko
+        
+        indicator_str = f" [{'/'.join(indicators)}]" if indicators else ""
+        display = f"{coin}{f' - {common}' if common else ''}{indicator_str}"
+        options[display] = symbol
     
     return options
 
@@ -310,6 +376,63 @@ def black_scholes(S: float, K: float, T: float, r: float, sigma: float, option_t
 with st.sidebar:
     st.header("⚙️ Configuration")
     
+    # Asset List Upload
+    st.subheader("📂 Asset List")
+    uploaded_file = st.file_uploader(
+        "Upload asset_list.csv (optional)",
+        type=['csv'],
+        help="Upload your asset_list.csv file if not found automatically"
+    )
+    
+    # Load asset list
+    asset_df = load_asset_list(csv_path="asset_list.csv", uploaded_file=uploaded_file)
+    
+    if asset_df.empty:
+        st.error("⚠️ Asset list not loaded. Please upload asset_list.csv file above.")
+        st.info("The file should have columns: Coin symbol, Common Name, CG API ID")
+        st.stop()
+    else:
+        st.success(f"✓ Loaded {len(asset_df)} assets")
+    
+    st.divider()
+    
+    # Data Source Filters
+    st.subheader("🔍 Filter Assets")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_spot = st.checkbox(
+            "Binance Spot",
+            value=False,
+            help="Show only assets available on Binance Spot"
+        )
+    with col2:
+        filter_futures = st.checkbox(
+            "Binance Futures",
+            value=False,
+            help="Show only assets available on Binance USDT-M Futures"
+        )
+    
+    filter_cg = st.checkbox(
+        "CoinGecko Listed",
+        value=False,
+        help="Show only assets with CoinGecko API ID"
+    )
+    
+    # Show filter summary
+    active_filters = []
+    if filter_spot:
+        active_filters.append("Spot")
+    if filter_futures:
+        active_filters.append("Futures")
+    if filter_cg:
+        active_filters.append("CoinGecko")
+    
+    if active_filters:
+        st.caption(f"Active filters: {', '.join(active_filters)}")
+    
+    st.divider()
+    
     # Market Type Selection
     st.subheader("Market Type")
     market_mode = st.radio(
@@ -325,14 +448,18 @@ with st.sidebar:
     # Asset Selection
     st.subheader("Asset Selection")
     
-    # Load asset list
-    asset_df = load_asset_list("asset_list.csv")
+    # Build token options with filters
+    with st.spinner("Loading available assets..."):
+        token_options = build_token_options(
+            asset_df,
+            filter_binance_spot=filter_spot,
+            filter_binance_futures=filter_futures,
+            filter_coingecko=filter_cg
+        )
     
-    if asset_df.empty:
-        st.error("Cannot load asset list. Please ensure asset_list.csv is in the working directory.")
+    if not token_options:
+        st.warning("No assets match your filters. Try adjusting filter settings.")
         st.stop()
-    
-    token_options = build_token_options(asset_df)
     
     # Default selections (BTC, ETH, SOL)
     default_tokens = []
@@ -345,10 +472,12 @@ with st.sidebar:
     selected_display = st.multiselect(
         "Select Assets (max 5)",
         options=list(token_options.keys()),
-        default=default_tokens[:3],
+        default=default_tokens[:3] if default_tokens else [],
         max_selections=5,
-        help="Choose up to 5 assets for volatility analysis"
+        help="Choose up to 5 assets for volatility analysis. Legend: S=Spot, F=Futures, CG=CoinGecko"
     )
+    
+    st.caption(f"Showing {len(token_options)} assets")
     
     st.divider()
     
@@ -479,6 +608,15 @@ for idx, display_name in enumerate(selected_display):
     # Section divider
     st.markdown("---")
     st.markdown(f"## {display_name} ({market_mode})")
+    
+    # Check if asset is available in selected market
+    if market_type == 'spot':
+        available_symbols = get_binance_symbols('spot')
+    else:
+        available_symbols = get_binance_symbols('perps')
+    
+    if symbol not in available_symbols:
+        st.warning(f"⚠️ {symbol} may not be available on Binance {market_mode}. Attempting to fetch data...")
     
     # Fetch data
     with st.spinner(f"Fetching {symbol} data..."):

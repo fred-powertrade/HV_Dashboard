@@ -13,10 +13,12 @@ Professional-grade volatility analysis tool designed specifically for market mak
 
 ### Technical Capabilities
 - **Dual Market Support**: Toggle between Binance Spot and USDT-M Perpetual Futures
+- **Smart Filtering**: Filter assets by Binance Spot/Futures availability or CoinGecko listing
 - **Multi-Asset Comparison**: Analyze up to 5 assets simultaneously
 - **Customizable Windows**: Define your own volatility calculation periods
 - **Real-time Pricing**: Live price feeds from Binance
 - **Interactive Charts**: Plotly-powered visualizations with zoom and export capabilities
+- **Flexible Deployment**: Auto-detect asset list or upload via web interface
 
 ## 📋 Requirements
 
@@ -38,9 +40,14 @@ pip install streamlit pandas numpy requests plotly scipy pytz
 ## 🚀 Getting Started
 
 ### 1. Setup
-Ensure both files are in the same directory:
+
+**Option A: Place files in same directory**
 - `hv_screener_enhanced.py`
 - `asset_list.csv`
+
+**Option B: Upload via web interface**
+- Run the app
+- Use the file upload button in the sidebar to upload `asset_list.csv`
 
 ### 2. Run the Application
 ```bash
@@ -53,12 +60,18 @@ The app will open in your default browser at `http://localhost:8501`
 
 **In the Sidebar:**
 
-1. **Market Type**: Choose between Spot or Perps (Perpetual Futures)
-2. **Asset Selection**: Select up to 5 assets from the curated list
-3. **Date Range**: Define your analysis period (default: last 180 days)
-4. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
-5. **Term Structure**: Select short and long tenors for spread analysis
-6. **Options Pricer**: Set expiry, strike range, and risk-free rate
+1. **Asset List Upload** (if not auto-detected): Upload your `asset_list.csv`
+2. **Filter Assets**: Filter by data availability
+   - **Binance Spot**: Show only assets on Binance Spot
+   - **Binance Futures**: Show only assets on Binance USDT-M Futures  
+   - **CoinGecko Listed**: Show only assets with CoinGecko API ID
+3. **Market Type**: Choose between Spot or Perps (Perpetual Futures)
+4. **Asset Selection**: Select up to 5 assets from the filtered list
+   - Legend shows availability: `[S/F/CG]` = Spot/Futures/CoinGecko
+5. **Date Range**: Define your analysis period (default: last 180 days)
+6. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
+7. **Term Structure**: Select short and long tenors for spread analysis
+8. **Options Pricer**: Set expiry, strike range, and risk-free rate
 
 ## 📊 Understanding the Metrics
 
@@ -142,7 +155,21 @@ The built-in Black-Scholes pricer uses **realized volatility** (not implied vol)
 - Calculate vega risk for volatility positions
 - Compare theoretical values to market prices for edge detection
 
-## 📈 Workflow Example
+## 📈 Workflow Examples
+
+### Finding Futures-Only Assets
+1. Check "Binance Futures" filter in sidebar
+2. Uncheck "Binance Spot" filter
+3. Browse assets with `[F]` indicator
+4. Select assets that only trade on futures
+5. Analyze volatility specific to perps market
+
+### Cross-Market Analysis
+1. Select an asset (e.g., BTC)
+2. Toggle between Spot and Perps market types
+3. Compare volatility differences between markets
+4. Export both datasets for correlation analysis
+5. Identify basis trading opportunities
 
 ### Daily Volatility Check
 1. Select your core trading assets (e.g., BTC, ETH, SOL)
@@ -208,6 +235,26 @@ The app uses Streamlit's caching to minimize API calls:
 If you hit rate limits, wait a few minutes before refreshing.
 
 ## 🐛 Troubleshooting
+
+### "Asset list not loaded"
+**Solution 1**: Use the file uploader
+- Click "Browse files" button in the sidebar
+- Upload your `asset_list.csv` file
+- App will automatically load the assets
+
+**Solution 2**: Check file location
+- Ensure `asset_list.csv` is in the same directory as the Python script
+- Or in the current working directory when you run streamlit
+
+**Solution 3**: Verify file format
+- CSV must have columns: `Coin symbol`, `Common Name`, `CG API ID`
+- Use comma separators
+- No special characters in the file path
+
+### "No assets match your filters"
+- Uncheck some filter options (Spot/Futures/CoinGecko)
+- Some assets may only be on Spot or only on Futures
+- Clear all filters to see complete asset list
 
 ### "No data available for {SYMBOL}"
 - Verify the asset is listed on Binance
