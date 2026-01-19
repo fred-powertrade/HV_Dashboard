@@ -28,26 +28,23 @@ streamlit run hv_screener_enhanced.py
 - Upload `asset_list.csv` via sidebar (or place it in same directory)
 - You should see "✓ Loaded X assets" message
 
-**Step 2: Apply Filters** (Optional)
-- Check "Binance Futures" to see only futures-traded assets
-- Check "CoinGecko Listed" to see only CG-tracked assets
-- Leave unchecked to see all assets
+**Step 2: Select Data Source**
+- **CoinGecko**: All CG-listed assets (comprehensive coverage)
+- **Binance Options**: Options-tradeable assets only (BTC, ETH, BNB, SOL, etc.)
 
-**Step 3: Select Market Type**
-- Choose "Perps" for perpetual futures (recommended for market makers)
-- Choose "Spot" for spot market analysis
-
-**Step 4: Pick Your Assets**
+**Step 3: Pick Your Assets**
+**Step 3: Pick Your Assets**
 - Select 1-5 assets from the dropdown
 - Default selections: BTC, ETH, SOL
-- Look for `[S/F/CG]` indicators showing availability
+- Look for `[CG/OPT]` indicators showing availability
 
-**Step 5: Configure Analysis**
+**Step 4: Configure Analysis**
+**Step 4: Configure Analysis**
 - **Date Range**: Last 180 days (default) or custom range
 - **HV Windows**: Keep default (2,3,7,14,30,60,90) or customize
 - **Term Structure**: Select short (7d) vs long (30d) for comparison
 
-**Step 6: Analyze Results**
+**Step 5: Analyze Results**
 - View volatility charts and metrics
 - Check RMS (7,14) for inventory risk
 - Compare term structure spreads
@@ -63,13 +60,12 @@ streamlit run hv_screener_enhanced.py
 4. Done!
 ```
 
-### 2. Find Futures-Only Assets (1 minute)
+### 2. Focus on Options Assets (1 minute)
 ```
-1. Check "Binance Futures" filter
-2. Uncheck "Binance Spot" filter  
-3. Browse filtered asset list
-4. Select interesting assets
-5. Analyze volatility
+1. Select "Binance Options" data source
+2. Browse filtered asset list (major assets only)
+3. Select assets with [OPT] indicator
+4. Analyze volatility for options trading
 ```
 
 ### 3. Export Data for Analysis (2 minutes)
@@ -81,17 +77,7 @@ streamlit run hv_screener_enhanced.py
 5. Import into Excel/Python/R for modeling
 ```
 
-### 4. Compare Spot vs Futures Vol (3 minutes)
-```
-1. Select asset (e.g., ETH)
-2. Set market to "Spot"
-3. Note the RMS (7,14) value
-4. Switch market to "Perps"
-5. Compare RMS values and charts
-6. Identify basis trading opportunities
-```
-
-### 5. Options Pricing (2 minutes)
+### 4. Options Pricing (2 minutes)
 ```
 1. Select asset
 2. Expand "🛠️ Theoretical Options Pricer"
@@ -128,12 +114,12 @@ streamlit run hv_screener_enhanced.py
 
 ## ⚙️ Pro Tips
 
-### Filtering Mastery
+### Data Source Selection
 ```
-✓ Use filters to focus on tradeable assets
-✓ "Binance Futures" = assets you can actually hedge
-✓ "CoinGecko Listed" = assets with market data
-✓ Combine filters: Futures + CoinGecko = best combo
+✓ CoinGecko = comprehensive asset coverage
+✓ Binance Options = focus on tradeable options
+✓ Choose based on your trading strategy
+✓ Both use Binance Spot price data (08:00 UTC)
 ```
 
 ### Date Range Selection

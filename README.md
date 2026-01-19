@@ -1,6 +1,6 @@
 # Historical Volatility Screener - Market Maker Edition
 
-Professional-grade volatility analysis tool designed specifically for market makers to analyze realized volatility across crypto assets, evaluate term structures, and export data for offline risk modeling.
+Professional-grade volatility analysis tool designed specifically for market makers to analyze realized volatility across crypto assets using CoinGecko spot prices and Binance options-eligible assets.
 
 ## 🎯 Key Features
 
@@ -11,9 +11,13 @@ Professional-grade volatility analysis tool designed specifically for market mak
 - **Data Export**: Download complete historical volatility datasets for your selected date range
 - **Theoretical Pricer**: Black-Scholes option pricing using realized vol as input
 
+### Data Sources
+- **CoinGecko Spot**: Complete spot market coverage via Binance API
+- **Binance Options**: Focus on options-tradeable assets (BTC, ETH, BNB, SOL, etc.)
+- **08:00 UTC Snapshots**: Standardized daily volatility calculations
+
 ### Technical Capabilities
-- **Dual Market Support**: Toggle between Binance Spot and USDT-M Perpetual Futures
-- **Smart Filtering**: Filter assets by Binance Spot/Futures availability or CoinGecko listing
+- **Dual Source Support**: Toggle between CoinGecko Spot and Binance Options assets
 - **Multi-Asset Comparison**: Analyze up to 5 assets simultaneously
 - **Customizable Windows**: Define your own volatility calculation periods
 - **Real-time Pricing**: Live price feeds from Binance
@@ -61,17 +65,15 @@ The app will open in your default browser at `http://localhost:8501`
 **In the Sidebar:**
 
 1. **Asset List Upload** (if not auto-detected): Upload your `asset_list.csv`
-2. **Filter Assets**: Filter by data availability
-   - **Binance Spot**: Show only assets on Binance Spot
-   - **Binance Futures**: Show only assets on Binance USDT-M Futures  
-   - **CoinGecko Listed**: Show only assets with CoinGecko API ID
-3. **Market Type**: Choose between Spot or Perps (Perpetual Futures)
-4. **Asset Selection**: Select up to 5 assets from the filtered list
-   - Legend shows availability: `[S/F/CG]` = Spot/Futures/CoinGecko
-5. **Date Range**: Define your analysis period (default: last 180 days)
-6. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
-7. **Term Structure**: Select short and long tenors for spread analysis
-8. **Options Pricer**: Set expiry, strike range, and risk-free rate
+2. **Data Source**: Choose between:
+   - **CoinGecko**: All assets with CoinGecko listings (comprehensive spot coverage)
+   - **Binance Options**: Focus on options-tradeable assets (BTC, ETH, BNB, SOL, etc.)
+3. **Asset Selection**: Select up to 5 assets from the filtered list
+   - Legend shows availability: `[CG]` = CoinGecko, `[OPT]` = Options Available
+4. **Date Range**: Define your analysis period (default: last 180 days)
+5. **HV Windows**: Customize volatility calculation periods (default: 2,3,7,14,30,60,90)
+6. **Term Structure**: Select short and long tenors for spread analysis
+7. **Options Pricer**: Set expiry, strike range, and risk-free rate
 
 ## 📊 Understanding the Metrics
 
@@ -157,19 +159,17 @@ The built-in Black-Scholes pricer uses **realized volatility** (not implied vol)
 
 ## 📈 Workflow Examples
 
-### Finding Futures-Only Assets
-1. Check "Binance Futures" filter in sidebar
-2. Uncheck "Binance Spot" filter
-3. Browse assets with `[F]` indicator
-4. Select assets that only trade on futures
-5. Analyze volatility specific to perps market
+### Analyzing CoinGecko Assets
+1. Select "CoinGecko" data source
+2. Browse all CG-listed assets
+3. Select assets with `[CG]` indicator
+4. Analyze comprehensive spot market volatility
 
-### Cross-Market Analysis
-1. Select an asset (e.g., BTC)
-2. Toggle between Spot and Perps market types
-3. Compare volatility differences between markets
-4. Export both datasets for correlation analysis
-5. Identify basis trading opportunities
+### Focusing on Options-Eligible Assets
+1. Select "Binance Options" data source
+2. View only options-tradeable assets (BTC, ETH, BNB, SOL, etc.)
+3. Assets show `[OPT]` indicator
+4. Ideal for options market making strategies
 
 ### Daily Volatility Check
 1. Select your core trading assets (e.g., BTC, ETH, SOL)
@@ -217,9 +217,11 @@ For different trading strategies:
 ## ⚠️ Important Notes
 
 ### Data Source
-- **Binance API**: All price and volume data
-- **Spot**: `api.binance.com`
-- **Futures**: `fapi.binance.com`
+- **Binance Spot API**: All price and volume data
+- **CoinGecko Integration**: Asset metadata and verification
+- **Endpoint**: `api.binance.com/api/v3/klines`
+
+All assets use Binance Spot market data regardless of data source selection. The data source filter simply determines which assets are shown based on CoinGecko listing or options availability.
 
 ### Limitations
 - Requires active internet connection

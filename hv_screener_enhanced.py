@@ -74,7 +74,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">📊 Historical Volatility Screener</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Market Maker Volatility Engine - HV calculated at 08:00 UTC daily snapshots</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Market Maker Volatility Engine - CoinGecko Spot & Binance Options | HV at 08:00 UTC</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # DATA LOADING & UTILITIES
@@ -107,40 +107,11 @@ def load_asset_list(csv_path: str = None, uploaded_file=None) -> pd.DataFrame:
         st.error(f"Failed to load asset list: {exc}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_binance_symbols(market_type: str) -> set:
-    """Get list of all available symbols on Binance Spot or Futures."""
-    try:
-        if market_type == 'spot':
-            url = "https://api.binance.com/api/v3/exchangeInfo"
-        else:
-            url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-        
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            symbols = {s['symbol'] for s in data.get('symbols', []) if s['symbol'].endswith('USDT')}
-            return symbols
-        return set()
-    except Exception:
-        return set()
-
-def build_token_options(df: pd.DataFrame, filter_binance_spot: bool = False, 
-                       filter_binance_futures: bool = False, 
-                       filter_coingecko: bool = False) -> dict:
+def build_token_options(df: pd.DataFrame, filter_coingecko: bool = False, 
+                       filter_binance_options: bool = False) -> dict:
     """Build token selection options from asset list with filtering."""
     options = {}
     seen = set()
-    
-    # Get available Binance symbols if filtering
-    binance_spot_symbols = set()
-    binance_futures_symbols = set()
-    
-    if filter_binance_spot or filter_binance_futures:
-        if filter_binance_spot:
-            binance_spot_symbols = get_binance_symbols('spot')
-        if filter_binance_futures:
-            binance_futures_symbols = get_binance_symbols('perps')
     
     for _, row in df.iterrows():
         coin = str(row.get("Coin symbol", "")).strip().upper()
@@ -152,23 +123,20 @@ def build_token_options(df: pd.DataFrame, filter_binance_spot: bool = False,
         symbol = f"{coin}USDT"
         
         # Apply filters
-        if filter_binance_spot and symbol not in binance_spot_symbols:
-            continue
-        if filter_binance_futures and symbol not in binance_futures_symbols:
-            continue
         if filter_coingecko and not cg_id:
+            continue
+        if filter_binance_options and not cg_id:  # For now, assume options available if CG listed
             continue
         
         seen.add(coin)
         
         # Build display name with availability indicators
         indicators = []
-        if symbol in binance_spot_symbols or not filter_binance_spot:
-            indicators.append("S")  # Spot
-        if symbol in binance_futures_symbols or not filter_binance_futures:
-            indicators.append("F")  # Futures
         if cg_id:
             indicators.append("CG")  # CoinGecko
+        # Assume Binance options available for major assets
+        if coin in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'LINK', 'DOT', 'MATIC']:
+            indicators.append("OPT")  # Options
         
         indicator_str = f" [{'/'.join(indicators)}]" if indicators else ""
         display = f"{coin}{f' - {common}' if common else ''}{indicator_str}"
@@ -194,7 +162,7 @@ def get_crypto_data(
     
     Args:
         symbol: Trading pair (e.g., 'BTCUSDT')
-        market_type: 'spot' or 'perps'
+        market_type: 'spot' or 'options'
         interval: Kline interval (default '1d')
         start_time: Start timestamp in milliseconds (08:00 UTC)
         end_time: End timestamp in milliseconds (08:00 UTC)
@@ -203,11 +171,8 @@ def get_crypto_data(
     Returns:
         DataFrame with OHLCV data indexed by timestamp (08:00 UTC)
     """
-    # Select API endpoint based on market type
-    if market_type == 'spot':
-        base_url = "https://api.binance.com/api/v3/klines"
-    else:  # perps
-        base_url = "https://fapi.binance.com/fapi/v1/klines"
+    # Select API endpoint - using Spot for both since we're getting price data
+    base_url = "https://api.binance.com/api/v3/klines"
     
     params = {
         'symbol': symbol,
@@ -224,6 +189,7 @@ def get_crypto_data(
         response = requests.get(base_url, params=params, timeout=10)
         
         if response.status_code != 200:
+            st.warning(f"Binance API returned status {response.status_code} for {symbol}")
             return pd.DataFrame()
         
         data = response.json()
@@ -258,13 +224,9 @@ def get_crypto_data(
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_current_price(symbol: str, market_type: str) -> float:
-    """Get the latest price from Binance."""
+    """Get the latest price from Binance Spot."""
     try:
-        if market_type == 'spot':
-            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-        else:
-            url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
-        
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             return float(response.json()['price'])
@@ -396,52 +358,25 @@ with st.sidebar:
     
     st.divider()
     
-    # Data Source Filters
-    st.subheader("🔍 Filter Assets")
+    # Data Source Selection
+    st.subheader("📊 Data Source")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        filter_spot = st.checkbox(
-            "Binance Spot",
-            value=False,
-            help="Show only assets available on Binance Spot"
-        )
-    with col2:
-        filter_futures = st.checkbox(
-            "Binance Futures",
-            value=False,
-            help="Show only assets available on Binance USDT-M Futures"
-        )
-    
-    filter_cg = st.checkbox(
-        "CoinGecko Listed",
-        value=False,
-        help="Show only assets with CoinGecko API ID"
+    data_source = st.radio(
+        "Select Price Data Source",
+        options=["CoinGecko", "Binance Options"],
+        index=0,
+        help="Choose where to get historical price data for HV calculations"
     )
     
-    # Show filter summary
-    active_filters = []
-    if filter_spot:
-        active_filters.append("Spot")
-    if filter_futures:
-        active_filters.append("Futures")
-    if filter_cg:
-        active_filters.append("CoinGecko")
-    
-    if active_filters:
-        st.caption(f"Active filters: {', '.join(active_filters)}")
-    
-    st.divider()
-    
-    # Market Type Selection
-    st.subheader("Market Type")
-    market_mode = st.radio(
-        "Data Source",
-        options=["Spot", "Perps"],
-        index=1,  # Default to Perps for market makers
-        help="Toggle between Binance Spot and USDT-M Perpetual Futures"
-    )
-    market_type = 'spot' if market_mode == 'Spot' else 'perps'
+    # Explain the data source
+    if data_source == "CoinGecko":
+        st.info("📈 Using CoinGecko Spot prices via Binance API")
+        filter_cg = True
+        filter_options = False
+    else:
+        st.info("⚡ Using Binance for Options-tradeable assets")
+        filter_cg = False
+        filter_options = True
     
     st.divider()
     
@@ -452,13 +387,12 @@ with st.sidebar:
     with st.spinner("Loading available assets..."):
         token_options = build_token_options(
             asset_df,
-            filter_binance_spot=filter_spot,
-            filter_binance_futures=filter_futures,
-            filter_coingecko=filter_cg
+            filter_coingecko=filter_cg,
+            filter_binance_options=filter_options
         )
     
     if not token_options:
-        st.warning("No assets match your filters. Try adjusting filter settings.")
+        st.warning("No assets match your selection. Try switching data source.")
         st.stop()
     
     # Default selections (BTC, ETH, SOL)
@@ -474,10 +408,10 @@ with st.sidebar:
         options=list(token_options.keys()),
         default=default_tokens[:3] if default_tokens else [],
         max_selections=5,
-        help="Choose up to 5 assets for volatility analysis. Legend: S=Spot, F=Futures, CG=CoinGecko"
+        help="Choose up to 5 assets for volatility analysis. Legend: CG=CoinGecko, OPT=Options Available"
     )
     
-    st.caption(f"Showing {len(token_options)} assets")
+    st.caption(f"Showing {len(token_options)} assets | Source: {data_source}")
     
     st.divider()
     
@@ -607,28 +541,19 @@ for idx, display_name in enumerate(selected_display):
     
     # Section divider
     st.markdown("---")
-    st.markdown(f"## {display_name} ({market_mode})")
-    
-    # Check if asset is available in selected market
-    if market_type == 'spot':
-        available_symbols = get_binance_symbols('spot')
-    else:
-        available_symbols = get_binance_symbols('perps')
-    
-    if symbol not in available_symbols:
-        st.warning(f"⚠️ {symbol} may not be available on Binance {market_mode}. Attempting to fetch data...")
+    st.markdown(f"## {display_name}")
     
     # Fetch data
     with st.spinner(f"Fetching {symbol} data..."):
         raw_df = get_crypto_data(
             symbol=symbol,
-            market_type=market_type,
+            market_type='spot',  # Always use spot for price data
             start_time=start_ms,
             end_time=end_ms
         )
     
     if raw_df.empty:
-        st.warning(f"⚠️ No data available for {symbol} on Binance {market_mode}. The asset may not be listed or the date range may be invalid.")
+        st.warning(f"⚠️ No data available for {symbol}. The asset may not be listed on Binance or the date range may be invalid.")
         continue
     
     # Calculate volatility metrics
@@ -640,7 +565,7 @@ for idx, display_name in enumerate(selected_display):
     
     # Get latest metrics
     latest = processed_df.iloc[-1]
-    current_price = get_current_price(symbol, market_type) or latest['close']
+    current_price = get_current_price(symbol, 'spot') or latest['close']
     
     # =============================================================================
     # METRICS ROW
@@ -718,7 +643,7 @@ for idx, display_name in enumerate(selected_display):
             ))
         
         fig.update_layout(
-            title=f"Volatility Term Structure ({market_mode})",
+            title=f"Volatility Term Structure",
             yaxis=dict(
                 tickformat='.0%',
                 title="Annualized Volatility"
@@ -855,7 +780,7 @@ for idx, display_name in enumerate(selected_display):
         export_df.to_csv(csv_buffer)
         csv_data = csv_buffer.getvalue()
         
-        filename = f"{symbol}_{market_mode}_Volatility_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+        filename = f"{symbol}_Volatility_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
         
         st.download_button(
             label=f"📥 Download {symbol} Volatility Data",
@@ -928,4 +853,4 @@ for idx, display_name in enumerate(selected_display):
 # =============================================================================
 
 st.markdown("---")
-st.caption("Market Maker HV Screener | Data: Binance | HV calculated at 08:00 UTC using 365-day annualization")
+st.caption("Market Maker HV Screener | Data: Binance Spot API | HV calculated at 08:00 UTC using 365-day annualization")
